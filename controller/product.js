@@ -1,7 +1,7 @@
 const { pool } = require("../database");
 const multer = require("multer");
 const path = require("path");
-const sharp = require("sharp");
+const Jimp = require('jimp');
 
 const poolQuery = (query, values) => {
   return new Promise((resolve, reject) => {
@@ -29,18 +29,23 @@ const upload = multer({
 
 const uploadAsync = async (req, res) => {
   return new Promise((resolve, reject) => {
-    upload.single("image")(req, res, (err) => {
+    upload.single("image")(req, res, async (err) => {
       if (err) {
         console.error("Error uploading image:", err);
         reject(err);
       } else {
-        // Assuming req.file is populated by multer
-        resolve(req.file ? req.file.path : null);
+        try {
+          const image = await Jimp.read(req.file.path);
+          await image.quality(80).write(req.file.path); // Adjust quality as needed
+          resolve(req.file ? req.file.path : null);
+        } catch (error) {
+          console.error("Error processing image with Jimp:", error);
+          reject(error);
+        }
       }
     });
   });
-};
-
+}
 const inventory = (req, res) => {
   const inventory = `SELECT product_id, product_name, Description, Stock, s, m, l, xl, xxl, xxxl, xxxxl, xxxxxl, xxxxxxl,Stock, product_price,Cost_price, product_type, created_at, updated_at
                     FROM products`;
@@ -89,24 +94,19 @@ const oneProduct = (req, res) => {
       const imageFilePath = productDetails.product_image;
 
       try {
-        // Use sharp to resize and compress the image
-        const compressedImageBuffer = await sharp(imageFilePath)
-          .resize({ width: 500 }) // Adjust the width as needed
-          .toBuffer();
+        // Use Jimp to resize and compress the image
+        const image = await Jimp.read(imageFilePath);
+        await image.resize(500, Jimp.AUTO).quality(80);
+        const base64Image = await image.getBase64Async(Jimp.MIME_JPEG);
 
-        // Convert the compressed image buffer to base64
-        const base64Image = compressedImageBuffer.toString("base64");
-
-        // Add the base64-encoded image to the product details
         productDetails.product_image = base64Image;
 
-        //console.log('Product details:', productDetails);
+        // console.log('Product details:', productDetails);
         res.status(200).json(productDetails);
-      } catch (sharpError) {
-        console.error("Error compressing image:", sharpError.message);
+      } catch (jimpError) {
+        console.error("Error compressing image:", jimpError.message);
 
-        // Provide additional information about the error
-        if (sharpError.code === "ENOENT") {
+        if (jimpError.code === "ENOENT") {
           return res.status(404).json({ error: "Image file not found" });
         }
 
@@ -117,6 +117,7 @@ const oneProduct = (req, res) => {
     }
   });
 };
+
 
 const addImage = async (req, res) => {
   try {
@@ -141,10 +142,10 @@ const addProduct = async (req, res) => {
 
   try {
     const prod = `
-    INSERT INTO products
-    (product_id, product_name, Description, s, m, l, xl, xxl, xxxl, xxxxl, xxxxxl, xxxxxxl, stock, product_price, Cost_price, product_type, product_image, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?, ?, NOW()) 
-  `;
+      INSERT INTO products
+      (product_id, product_name, Description, s, m, l, xl, xxl, xxxl, xxxxl, xxxxxl, xxxxxxl, stock, product_price, Cost_price, product_type, product_image, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?, ?, NOW()) 
+    `;
     for (const product of req.body.data) {
       const totalStock =
         (isNaN(+product.s) ? 0 : +product.s) +
@@ -187,7 +188,6 @@ const addProduct = async (req, res) => {
   }
 };
 
-// backend
 const updateProduct = async (req, res) => {
   if (!req.body.data || !Array.isArray(req.body.data)) {
     return res.status(400).json({ error: "Invalid data format" });
@@ -311,10 +311,10 @@ const sendImage = async (req, res) => {
       }
 
       try {
-        // Use sharp to resize and compress the image
-        const compressedImageBuffer = await sharp(result.product_image)
-          .resize({ width: 500 }) // Adjust the width as needed
-          .toBuffer();
+        // Use Jimp to resize and compress the image
+        const image = await Jimp.read(result.product_image);
+        await image.resize(500, Jimp.AUTO).quality(80);
+        const compressedImageBuffer = await image.getBufferAsync(Jimp.MIME_JPEG);
 
         // Convert the compressed image buffer to base64
         const base64Image = compressedImageBuffer.toString('base64');
@@ -323,15 +323,15 @@ const sendImage = async (req, res) => {
           product_id: result.product_id,
           image: base64Image,
         };
-      } catch (sharpError) {
-        console.error('Error processing image with sharp:', sharpError);
+      } catch (jimpError) {
+        console.error('Error processing image with Jimp:', jimpError);
         return null;
       }
     }));
 
     res.json(images.filter(Boolean));
   });
-}
+};
 
 
 module.exports = {

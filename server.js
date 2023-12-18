@@ -15,7 +15,7 @@ const dashboardRoute = require("./routes/dashboard")
 app.use(express.json());
 app.use(
   cors({
-    origin: ['https://dashboard-rov5.onrender.com'],
+    origin: ['http://localhost:3000'],
     credentials: true,
   })
 );
