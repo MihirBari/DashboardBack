@@ -62,7 +62,7 @@ const editDealer = (req, res) => {
     req.body.debitor_paid_by,
     req.body.total_product,
     req.body.other_cost,
-    req.params.id // Assuming you pass the id as a route parameter, adjust it accordingly
+    req.params.id 
   ];
 
   pool.query(updateDealer, values, (error, results) => {

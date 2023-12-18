@@ -108,4 +108,11 @@ const deleteUser = (req,res) => {
   });
 }
 
-module.exports = { login,getUserData,addUser,deleteUser };
+const logout = (req, res) => {
+  res.cookie("token");
+  return res.json({
+    status: "Success",
+  });
+}
+
+module.exports = { login,getUserData,addUser,deleteUser,logout };

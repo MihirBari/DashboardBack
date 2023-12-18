@@ -417,27 +417,75 @@ const viewOneOrder = async (req, res) => {
 };
 
 const deleteOrder = (req, res) => {
-  const productId = req.body.product_id;
+  const { product_id, size, sizeValue } = req.body;
 
-  if (!productId) {
-    return res
-      .status(400)
-      .json({ error: "ProductId is required in the request body" });
+  if (!product_id || !size || sizeValue === undefined) {
+    return res.status(400).json({ error: "Invalid request body" });
   }
 
-  const query = "DELETE FROM order_items WHERE product_id = ?";
-  const values = [productId];
+  const deleteQuery = "DELETE FROM order_items WHERE product_id = ?";
+  const deleteValues = [product_id];
 
-  pool.query(query, values, (error, results) => {
+  const updateQuery = `
+    UPDATE products
+    SET 
+      ${size} = ${size} + ?,
+      stock = stock + ?
+    WHERE product_id = ?
+  `;
+
+  const updateValues = [sizeValue, sizeValue, product_id];
+
+  pool.getConnection((error, connection) => {
     if (error) {
-      console.error("Error executing query:", error);
+      console.error("Error getting database connection:", error);
       return res.status(500).json({ error: "Internal Server Error" });
     }
 
-    console.log("Deleted", results);
-    res.json(results);
+    connection.beginTransaction((beginErr) => {
+      if (beginErr) {
+        console.error("Error beginning transaction:", beginErr);
+        return res.status(500).json({ error: "Internal Server Error" });
+      }
+
+      connection.query(deleteQuery, deleteValues, (deleteError, deleteResults) => {
+        if (deleteError) {
+          return connection.rollback(() => {
+            console.error("Error deleting order:", deleteError);
+            res.status(500).json({ error: "Internal Server Error" });
+          });
+        }
+
+        connection.query(updateQuery, updateValues, (updateError, updateResults) => {
+          if (updateError) {
+            return connection.rollback(() => {
+              console.error("Error updating products:", updateError);
+              res.status(500).json({ error: "Internal Server Error" });
+            });
+          }
+
+          connection.commit((commitError) => {
+            if (commitError) {
+              return connection.rollback(() => {
+                console.error("Error committing transaction:", commitError);
+                res.status(500).json({ error: "Internal Server Error" });
+              });
+            }
+
+            console.log("Order deleted and products updated successfully");
+            res.json({
+              success: true,
+              message: "Order deleted and products updated successfully",
+            });
+
+            connection.release();
+          });
+        });
+      });
+    });
   });
 };
+
 
 module.exports = { order, updateOrder,updateOrder1, viewOrder, deleteOrder,viewOneOrder };
 
