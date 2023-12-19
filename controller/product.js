@@ -46,6 +46,7 @@ const uploadAsync = async (req, res) => {
     });
   });
 }
+
 const inventory = (req, res) => {
   const inventory = `SELECT product_id, product_name, Description, Stock, s, m, l, xl, xxl, xxxl, xxxxl, xxxxxl, xxxxxxl,Stock, product_price,Cost_price, product_type, created_at, updated_at
                     FROM products`;
@@ -193,7 +194,6 @@ const updateProduct = async (req, res) => {
     return res.status(400).json({ error: "Invalid data format" });
   }
 
-  
   try {
     const updateQuery = `
       UPDATE products
@@ -213,7 +213,7 @@ const updateProduct = async (req, res) => {
         product_price = ?,
         Cost_price = ?,
         product_type = ?,
-        ${req.body.data.product_image ? 'product_image = ?,' : ''}
+        ${req.body.data[0].product_image ? 'product_image = ?,' : ''}
         updated_at = NOW()
       WHERE product_id = ?
     `;
@@ -246,10 +246,10 @@ const updateProduct = async (req, res) => {
         product.product_price,
         product.Cost_price,
         product.product_type,
-        ...(req.body.data.product_image ? [product.product_image] : []),
+        ...(product.product_image ? [product.product_image] : []),
         req.params.product_id,
       ];
-     console.log(values)
+
       await pool.query(updateQuery, values);
     }
 
@@ -259,6 +259,7 @@ const updateProduct = async (req, res) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
+
 
 const productId = async (req, res) => {
   try {
