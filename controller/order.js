@@ -5,7 +5,6 @@ const order = async (req, res) => {
     creditor_name,
     product_id,
     size,
-    sizeValue,
     returned,
     amount_sold,
     amount_condition,
@@ -28,18 +27,17 @@ const order = async (req, res) => {
 
       try {
         const sizeColumn = size ? size.toLowerCase() : null;
-        const sizeQuantity = isNaN(+sizeValue) ? 0 : +sizeValue;
+        const sizeQuantity =  1;
         console.log("Order received:", req.body);
         await connection.query(
           `
           INSERT INTO order_items (
-            creditor_name, product_id, ${sizeColumn},	Total_items, returned, amount_sold, amount_condition, created_at
-          ) VALUES (?, ?, ?, ?,?, ?, ?, Now());
+            creditor_name, product_id, ${sizeColumn}, returned, amount_sold, amount_condition, created_at
+          ) VALUES (?, ?, ?, ?,?, ?, Now());
           `,
           [
             creditor_name,
             product_id,
-            sizeQuantity,
             sizeQuantity,
             returned,
             amount_sold,
@@ -59,11 +57,11 @@ const order = async (req, res) => {
             connection.query(
               `
                  UPDATE products
-                    SET ${sizeColumn} = ${sizeColumn} - ?,
-                    stock = stock - ?
+                    SET ${sizeColumn} = ${sizeColumn} - 1,
+                    stock = stock - 1
                     WHERE product_id = ?;
                `,
-              [sizeQuantity,sizeQuantity, product_id],
+              [ product_id],
               (updateErr) => {
                 if (updateErr) {
                   return connection.rollback(() => {
@@ -109,7 +107,6 @@ const updateOrder1 = async (req, res) => {
   const {
     creditor_name,
     size,
-    sizeValue,
     returned,
     amount_sold,
     amount_condition,
@@ -130,18 +127,17 @@ const updateOrder1 = async (req, res) => {
 
       try {
         const sizeColumn = size ? size.toLowerCase() : null;
-        const sizeQuantity = isNaN(+sizeValue) ? 0 : +sizeValue;
+        const sizeQuantity = 1;
 
         await connection.query(
           `
           UPDATE order_items 
-          SET creditor_name = ?, ${sizeColumn} = ?, Total_items = ?,
+          SET creditor_name = ?, ${sizeColumn} = ?,
           returned = ?, amount_sold = ?, amount_condition = ?, update_at = NOW()
           WHERE product_id = ?;
           `,
           [
             creditor_name,
-            sizeQuantity,
             sizeQuantity,
             returned,
             amount_sold,
@@ -160,10 +156,10 @@ const updateOrder1 = async (req, res) => {
               connection.query(
                 `
                 UPDATE products
-                SET ${sizeColumn} = ${sizeColumn} + ?, stock = stock + ?
+                SET ${sizeColumn} = ${sizeColumn} + 1, stock = stock + 1
                 WHERE product_id = ?;
                 `,
-                [sizeQuantity, sizeQuantity, product_id],
+                [ product_id],
                 (updateErr) => {
                   if (updateErr) {
                     connection.rollback(() => {
@@ -342,6 +338,7 @@ const filterNullValues = (obj) => {
 const viewOrder = async (req, res) => {
   const inventoryQuery = `
     SELECT
+      oi.order_id,
       oi.creditor_name,
       oi.product_id,
       p.product_name,
@@ -353,7 +350,6 @@ const viewOrder = async (req, res) => {
       oi.xxxl,
       oi.xxxxl,
       oi.xxxxxl,
-      oi.Total_items,
       oi.returned,
       oi.amount_sold,
       oi.amount_condition,
@@ -390,7 +386,6 @@ const viewOneOrder = async (req, res) => {
       oi.xxxl,
       oi.xxxxl,
       oi.xxxxxl,
-      oi.Total_items,
       oi.returned,
       oi.amount_sold,
       oi.amount_condition,
@@ -417,24 +412,24 @@ const viewOneOrder = async (req, res) => {
 };
 
 const deleteOrder = (req, res) => {
-  const { product_id, size, sizeValue } = req.body;
+  const { order_id, product_id, size } = req.body;
 
-  if (!product_id || !size || sizeValue === undefined) {
+  if (!product_id || size === undefined) {
     return res.status(400).json({ error: "Invalid request body" });
   }
 
-  const deleteQuery = "DELETE FROM order_items WHERE product_id = ?";
-  const deleteValues = [product_id];
+  const deleteQuery = "DELETE FROM order_items WHERE order_id = ?";
+  const deleteValues = [order_id];
 
   const updateQuery = `
     UPDATE products
     SET 
-      ${size} = ${size} + ?,
-      stock = stock + ?
+      ${size} = ${size} + 1,
+      stock = stock + 1
     WHERE product_id = ?
   `;
 
-  const updateValues = [sizeValue, sizeValue, product_id];
+  const updateValues = [product_id];
 
   pool.getConnection((error, connection) => {
     if (error) {
@@ -476,6 +471,7 @@ const deleteOrder = (req, res) => {
             res.json({
               success: true,
               message: "Order deleted and products updated successfully",
+              order_id: order_id,
             });
 
             connection.release();
@@ -485,6 +481,7 @@ const deleteOrder = (req, res) => {
     });
   });
 };
+
 
 
 module.exports = { order, updateOrder,updateOrder1, viewOrder, deleteOrder,viewOneOrder };

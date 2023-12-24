@@ -16,6 +16,23 @@ const showDealer = (req,res) => {
 
 }
 
+const showOneDealer = (req, res) => {
+  const dealerQuery = `
+    SELECT id, debitor_name, debitor_Date, debitor_Amount, debitor_paid_by, 
+           total_product, other_cost, created_at, updated_at
+    FROM debitors
+    WHERE id = ?
+  `;
+  pool.query(dealerQuery, [req.params.id], (error, results) => {
+    if (error) {
+      console.error('Error executing query:', error);
+      res.status(500).json({ error: 'Internal Server Error' });
+      return;
+    }
+    console.log('Dealer details:', results);
+    res.status(200).json(results);
+  });
+};
 
 const addDealer = (req,res) => {
     const addDealer = `Insert into debitors
@@ -97,4 +114,4 @@ const deleteSeller = (req, res) => {
   });
 };
 
-module.exports = {showDealer,addDealer,deleteSeller,editDealer};
+module.exports = {showDealer,addDealer,deleteSeller,editDealer,showOneDealer};

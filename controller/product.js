@@ -2,6 +2,7 @@ const { pool } = require("../database");
 const multer = require("multer");
 const path = require("path");
 const Jimp = require('jimp');
+const { query } = require("express");
 
 const poolQuery = (query, values) => {
   return new Promise((resolve, reject) => {
@@ -48,16 +49,46 @@ const uploadAsync = async (req, res) => {
 }
 
 const inventory = (req, res) => {
-  const inventory = `SELECT product_id, product_name, Description, Stock, s, m, l, xl, xxl, xxxl, xxxxl, xxxxxl, xxxxxxl,Stock, product_price,Cost_price, product_type, created_at, updated_at
-                    FROM products`;
+  const inventory = `
+  SELECT
+    p.product_id,
+    p.product_name,
+    p.Description,
+    p.Stock,
+    p.s,
+    p.m,
+    p.l,
+    p.xl,
+    p.xxl,
+    p.xxxl,
+    p.xxxxl,
+    p.xxxxxl,
+    p.xxxxxxl,
+    p.Stock,
+    p.product_price,
+    p.Cost_price,
+    p.product_type,
+    p.other_cost,
+    p.Final_cost,
+    p.created_at,
+    p.updated_at,
+    u.name as Created_by,
+    uu.name as Updated_by
+  FROM
+    products p
+  JOIN
+    Users u ON u.id = p.user_id
+  LEFT JOIN
+    Users uu ON uu.id = p.uuser_id
+`;
 
-  pool.query(inventory, (error, results) => {
-    if (error) {
-      console.error("Error executing query:", error);
-      return;
-    }
-    res.json(results);
-  });
+pool.query(inventory, (error, results) => {
+  if (error) {
+    console.error("Error executing query:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+  res.json(results);
+});
 };
 
 const oneProduct = (req, res) => {
@@ -72,7 +103,7 @@ const oneProduct = (req, res) => {
       product_price,
       Cost_price,
       product_type,
-      product_image
+      product_image,other_cost, Final_cost
     FROM products
     WHERE product_id = ?;
   `;
@@ -141,12 +172,19 @@ const addProduct = async (req, res) => {
     return res.status(400).json({ error: "Invalid data format" });
   }
 
+  const userId = req.body.data[0].userId;
+  console.log(userId);
+
   try {
     const prod = `
-      INSERT INTO products
-      (product_id, product_name, Description, s, m, l, xl, xxl, xxxl, xxxxl, xxxxxl, xxxxxxl, stock, product_price, Cost_price, product_type, product_image, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?, ?, NOW()) 
+    INSERT INTO products
+  (product_id, product_name, Description, s, m, l, xl, xxl, xxxl, xxxxl, xxxxxl, xxxxxxl, stock,
+  product_price, Cost_price, product_type, product_image, other_cost, Final_cost, user_id, created_at)
+VALUES( 
+  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW()
+)
     `;
+
     for (const product of req.body.data) {
       const totalStock =
         (isNaN(+product.s) ? 0 : +product.s) +
@@ -177,9 +215,15 @@ const addProduct = async (req, res) => {
         product.Cost_price,
         product.product_type,
         product.product_image,
+        product.other_cost,
+        product.Final_cost,
+        userId
       ];
 
+      console.log("values: ", values);
+
       await pool.query(prod, values);
+
     }
 
     res.json({ message: "Products added successfully" });
@@ -189,10 +233,16 @@ const addProduct = async (req, res) => {
   }
 };
 
+
 const updateProduct = async (req, res) => {
   if (!req.body.data || !Array.isArray(req.body.data)) {
     return res.status(400).json({ error: "Invalid data format" });
   }
+
+  const userId = req.body.userId;
+  console.log(userId);
+
+  console.log(userId);
 
   try {
     const updateQuery = `
@@ -212,6 +262,9 @@ const updateProduct = async (req, res) => {
         stock = ?,
         product_price = ?,
         Cost_price = ?,
+        other_cost = ?,
+         Final_cost = ?, 
+         uuser_id = ?,
         product_type = ?,
         ${req.body.data[0].product_image ? 'product_image = ?,' : ''}
         updated_at = NOW()
@@ -245,6 +298,9 @@ const updateProduct = async (req, res) => {
         totalStock,
         product.product_price,
         product.Cost_price,
+        product.other_cost,
+        product.Final_cost,
+        userId,
         product.product_type,
         ...(product.product_image ? [product.product_image] : []),
         req.params.product_id,
