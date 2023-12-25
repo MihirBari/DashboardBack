@@ -26,27 +26,26 @@ const upload = multer({
       );
     },
   }),
-});
+}).array("images", 10);
 
 const uploadAsync = async (req, res) => {
   return new Promise((resolve, reject) => {
-    upload.single("image")(req, res, async (err) => {
+    upload(req, res, async (err) => {
       if (err) {
-        console.error("Error uploading image:", err);
+        console.error("Error uploading images:", err);
         reject(err);
       } else {
         try {
-          const image = await Jimp.read(req.file.path);
-          await image.quality(80).write(req.file.path); // Adjust quality as needed
-          resolve(req.file ? req.file.path : null);
+          const imagePaths = req.files.map((file) => file.path);
+          resolve(imagePaths);
         } catch (error) {
-          console.error("Error processing image with Jimp:", error);
+          console.error("Error processing images:", error);
           reject(error);
         }
       }
     });
   });
-}
+};
 
 const inventory = (req, res) => {
   const inventory = `
@@ -103,7 +102,9 @@ const oneProduct = (req, res) => {
       product_price,
       Cost_price,
       product_type,
-      product_image,other_cost, Final_cost
+      product_image,
+      other_cost,
+      Final_cost
     FROM products
     WHERE product_id = ?;
   `;
@@ -117,23 +118,30 @@ const oneProduct = (req, res) => {
     if (results.length === 1) {
       const productDetails = results[0];
 
-      if (productDetails.product_image === null) {
-        productDetails.product_image = "path/to/default/image.jpg";
-        console.log("Product details:", productDetails);
-        return res.status(200).json(productDetails);
+      // Parse the product_image back to an array
+      if (productDetails.product_image) {
+        try {
+          productDetails.product_image = JSON.parse(productDetails.product_image);
+        } catch (jsonParseError) {
+          console.error("Error parsing product_image:", jsonParseError.message);
+          return res.status(500).json({ error: "Error parsing product_image" });
+        }
+      } else {
+        // Set a default image path if product_image is null
+        productDetails.product_image = ["path/to/default/image.jpg"];
       }
 
-      const imageFilePath = productDetails.product_image;
-
+      // Handle each image in the array
       try {
-        // Use Jimp to resize and compress the image
-        const image = await Jimp.read(imageFilePath);
-        await image.resize(500, Jimp.AUTO).quality(80);
-        const base64Image = await image.getBase64Async(Jimp.MIME_JPEG);
+        const images = await Promise.all(productDetails.product_image.map(async (imagePath) => {
+          const imageFilePath = imagePath; // Adjust the path as needed
+          const image = await Jimp.read(imageFilePath);
+          await image.resize(500, Jimp.AUTO).quality(80);
+          return image.getBase64Async(Jimp.MIME_JPEG);
+        }));
 
-        productDetails.product_image = base64Image;
+        productDetails.product_image = images;
 
-        // console.log('Product details:', productDetails);
         res.status(200).json(productDetails);
       } catch (jimpError) {
         console.error("Error compressing image:", jimpError.message);
@@ -153,13 +161,14 @@ const oneProduct = (req, res) => {
 
 const addImage = async (req, res) => {
   try {
-    const imagePath = await uploadAsync(req, res);
-    if (imagePath) {
-      res
-        .status(200)
-        .send({ imagePath, message: "Image path stored successfully" });
+    const imagePaths = await uploadAsync(req, res);
+    if (imagePaths.length > 0) {
+      res.status(200).send({
+        imagePaths,
+        message: "Images paths stored successfully",
+      });
     } else {
-      res.status(400).send("No image uploaded");
+      res.status(400).send("No images uploaded");
     }
   } catch (error) {
     console.error("Error in image upload:", error);
@@ -214,7 +223,7 @@ VALUES(
         product.product_price,
         product.Cost_price,
         product.product_type,
-        product.product_image,
+        JSON.stringify(product.product_image),
         product.other_cost,
         product.Final_cost,
         userId
@@ -240,9 +249,6 @@ const updateProduct = async (req, res) => {
   }
 
   const userId = req.body.userId;
-  console.log(userId);
-
-  console.log(userId);
 
   try {
     const updateQuery = `
@@ -263,8 +269,8 @@ const updateProduct = async (req, res) => {
         product_price = ?,
         Cost_price = ?,
         other_cost = ?,
-         Final_cost = ?, 
-         uuser_id = ?,
+        Final_cost = ?, 
+        user_id = ?,
         product_type = ?,
         ${req.body.data[0].product_image ? 'product_image = ?,' : ''}
         updated_at = NOW()
@@ -302,7 +308,7 @@ const updateProduct = async (req, res) => {
         product.Final_cost,
         userId,
         product.product_type,
-        ...(product.product_image ? [product.product_image] : []),
+        ...(product.product_image ? [JSON.stringify(product.product_image)] : []),
         req.params.product_id,
       ];
 
@@ -315,7 +321,6 @@ const updateProduct = async (req, res) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
-
 
 const productId = async (req, res) => {
   try {
@@ -368,8 +373,14 @@ const sendImage = async (req, res) => {
       }
 
       try {
+        // Parse the product_image back to an array
+        const imagePaths = JSON.parse(result.product_image);
+
+        // Take only the first image path
+        const firstImagePath = imagePaths[0];
+
         // Use Jimp to resize and compress the image
-        const image = await Jimp.read(result.product_image);
+        const image = await Jimp.read(firstImagePath);
         await image.resize(500, Jimp.AUTO).quality(80);
         const compressedImageBuffer = await image.getBufferAsync(Jimp.MIME_JPEG);
 

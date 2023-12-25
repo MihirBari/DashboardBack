@@ -8,6 +8,7 @@ const order = async (req, res) => {
     returned,
     amount_sold,
     amount_condition,
+    paid_by,
   } = req.body;
 
   console.log("Order received on the server:", req.body);
@@ -32,8 +33,8 @@ const order = async (req, res) => {
         await connection.query(
           `
           INSERT INTO order_items (
-            creditor_name, product_id, ${sizeColumn}, returned, amount_sold, amount_condition, created_at
-          ) VALUES (?, ?, ?, ?,?, ?, Now());
+            creditor_name, product_id, ${sizeColumn}, returned, amount_sold, amount_condition, paid_by,created_at
+          ) VALUES (?, ?, ?, ?,?, ?, ?,Now());
           `,
           [
             creditor_name,
@@ -42,6 +43,7 @@ const order = async (req, res) => {
             returned,
             amount_sold,
             amount_condition,
+            paid_by
           ],
           (insertErr) => {
             if (insertErr) {
@@ -104,6 +106,151 @@ const order = async (req, res) => {
 };
 
 const updateOrder1 = async (req, res) => {
+  try {
+    const {
+      creditor_name,
+      size,
+      returned,
+      amount_sold,
+      amount_condition,
+      paid_by,
+    } = req.body;
+
+    const { product_id } = req.params;
+
+    pool.getConnection((err, connection) => {
+      if (err) {
+        return res.status(500).json({ error: "Error getting database connection" });
+      }
+
+      connection.beginTransaction(async (beginErr) => {
+        if (beginErr) {
+          connection.release();
+          return res.status(500).json({ error: "Error starting transaction" });
+        }
+
+        try {
+          const sizeColumn = size ? size.toLowerCase() : null;
+          const sizeQuantity = 1;
+
+          await connection.query(
+            `
+            UPDATE order_items 
+            SET creditor_name = ?, ${sizeColumn} = ?,
+            returned = ?, amount_sold = ?, amount_condition = ?,paid_by = ?, update_at = NOW()
+            WHERE product_id = ?;
+            `,
+            [
+              creditor_name,
+              sizeQuantity,
+              returned,
+              amount_sold,
+              amount_condition,
+              paid_by,
+              product_id,
+            ],
+            async (insertErr) => {
+              if (insertErr) {
+                console.error("Error updating order_items:", insertErr);
+                connection.rollback();
+                connection.release();
+                return res.status(500).json({ error: "Error updating order_items" });
+              }
+
+              if (returned === 'Yes') {
+                try {
+                  await connection.query(
+                    `
+                    UPDATE products
+                    SET ${sizeColumn} = ${sizeColumn} + 1, stock = stock + 1
+                    WHERE product_id = ?;
+                    `,
+                    [product_id]
+                  );
+
+                  connection.commit((commitErr) => {
+                    if (commitErr) {
+                      console.error("Error committing transaction:", commitErr);
+                      connection.rollback();
+                      connection.release();
+                      return res.status(500).json({ error: "Error committing transaction" });
+                    }
+                    connection.release();
+                    return res.status(200).json({
+                      success: true,
+                      message: "Order placed successfully",
+                    });
+                  });
+                } catch (updateErr) {
+                  console.error("Error updating product quantities:", updateErr);
+                  connection.rollback();
+                  connection.release();
+                  return res.status(500).json({ error: "Error updating product quantities" });
+                }
+              } else if (returned === 'No') {
+                try {
+                  await connection.query(
+                    `
+                    UPDATE products
+                    SET ${sizeColumn} = ${sizeColumn} - 1, stock = stock - 1
+                    WHERE product_id = ?;
+                    `,
+                    [product_id]
+                  );
+
+                  connection.commit((commitErr) => {
+                    if (commitErr) {
+                      console.error("Error committing transaction:", commitErr);
+                      connection.rollback();
+                      connection.release();
+                      return res.status(500).json({ error: "Error committing transaction" });
+                    }
+                    connection.release();
+                    return res.status(200).json({
+                      success: true,
+                      message: "Order placed successfully",
+                    });
+                  });
+                } catch (updateErr) {
+                  console.error("Error updating product quantities:", updateErr);
+                  connection.rollback();
+                  connection.release();
+                  return res.status(500).json({ error: "Error updating product quantities" });
+                }
+              } else {
+                connection.commit((commitErr) => {
+                  if (commitErr) {
+                    console.error("Error committing transaction:", commitErr);
+                    connection.rollback();
+                    connection.release();
+                    return res.status(500).json({ error: "Error committing transaction" });
+                  }
+
+                  connection.release();
+                  return res.status(200).json({
+                    success: true,
+                    message: "Order placed successfully",
+                  });
+                });
+              }
+            }
+          );
+        } catch (error) {
+          console.error("Error processing order:", error);
+          connection.rollback();
+          connection.release();
+          return res.status(500).json({ error: "Error processing order" });
+        }
+      });
+    });
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    return res.status(500).json({ error: "Unexpected error" });
+  }
+};
+
+
+const updateOrder = async (req, res) => {
   const {
     creditor_name,
     size,
@@ -167,7 +314,6 @@ const updateOrder1 = async (req, res) => {
                       return res.status(500).json({ error: "Error updating product quantities" });
                     });
                   }
-
                   connection.commit((commitErr) => {
                     if (commitErr) {
                       connection.rollback(() => {
@@ -175,7 +321,6 @@ const updateOrder1 = async (req, res) => {
                         return res.status(500).json({ error: "Error committing transaction" });
                       });
                     }
-
                     connection.release();
                     return res.status(200).json({
                       success: true,
@@ -212,117 +357,6 @@ const updateOrder1 = async (req, res) => {
   });
 };
 
-
-const updateOrder = async (req, res) =>{
-  const {
-    creditor_name,
-    size,
-    sizeValue,
-    returned,
-    amount_sold,
-    amount_condition,
-  } = req.body;
-
-  const { product_id } = req.params;
-
-  pool.getConnection((err, connection) => {
-    if (err) {
-      return res.status(500).json({ error: "Error getting database connection" });
-    }
-
-    connection.beginTransaction(async (beginErr) => {
-      if (beginErr) {
-        connection.release();
-        return res.status(500).json({ error: "Error starting transaction" });
-      }
-
-      try {
-        const sizeColumn = size ? size.toLowerCase() : null;
-        const sizeQuantity = isNaN(+sizeValue) ? 0 : +sizeValue;
-
-        await connection.query(
-          `
-          UPDATE order_items 
-          SET creditor_name = ?, ${sizeColumn} = ?, Total_items = ?,
-          returned = ?, amount_sold = ?, amount_condition = ?, update_at = NOW()
-          WHERE product_id = ?;
-          `,
-          [
-            creditor_name,
-            sizeQuantity,
-            sizeQuantity,
-            returned,
-            amount_sold,
-            amount_condition,
-            product_id,
-          ],
-          async (insertErr) => {
-            if (insertErr) {
-              connection.rollback(() => {
-                connection.release();
-                return res.status(500).json({ error: "Error updating order_items" });
-              });
-            }
-
-            if (returned === 'Yes') {
-              connection.query(
-                `
-                UPDATE products
-                SET ${sizeColumn} = ${sizeColumn} + ?, stock = stock + ?
-                WHERE product_id = ?;
-                `,
-                [sizeQuantity, sizeQuantity, product_id],
-                (updateErr) => {
-                  if (updateErr) {
-                    connection.rollback(() => {
-                      connection.release();
-                      return res.status(500).json({ error: "Error updating product quantities" });
-                    });
-                  }
-
-                  connection.commit((commitErr) => {
-                    if (commitErr) {
-                      connection.rollback(() => {
-                        connection.release();
-                        return res.status(500).json({ error: "Error committing transaction" });
-                      });
-                    }
-
-                    connection.release();
-                    return res.status(200).json({
-                      success: true,
-                      message: "Order placed successfully",
-                    });
-                  });
-                }
-              );
-            } else {
-              connection.commit((commitErr) => {
-                if (commitErr) {
-                  connection.rollback(() => {
-                    connection.release();
-                    return res.status(500).json({ error: "Error committing transaction" });
-                  });
-                }
-
-                connection.release();
-                return res.status(200).json({
-                  success: true,
-                  message: "Order placed successfully",
-                });
-              });
-            }
-          }
-        );
-      } catch (error) {
-        connection.rollback(() => {
-          connection.release();
-          return res.status(500).json({ error: "Error processing order" });
-        });
-      }
-    });
-  });
-};
 
 
 const filterNullValues = (obj) => {
@@ -353,6 +387,7 @@ const viewOrder = async (req, res) => {
       oi.returned,
       oi.amount_sold,
       oi.amount_condition,
+      oi.paid_by,
       oi.created_at,
       oi.update_at
     FROM
@@ -389,6 +424,7 @@ const viewOneOrder = async (req, res) => {
       oi.returned,
       oi.amount_sold,
       oi.amount_condition,
+      oi.paid_by,
       oi.created_at,
       oi.update_at
     FROM
